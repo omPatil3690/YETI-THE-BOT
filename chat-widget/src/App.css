@@ -1,0 +1,139 @@
+/* Chat Box Container */
+.chat-box {
+  position: fixed;
+  bottom: 60px;
+  right: 20px;
+  width: 320px;
+  height: 420px;
+  background: linear-gradient(135deg, #fdfbfb, #ebedee);
+  border: 1px solid #ccc;
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: "Segoe UI", sans-serif;
+  z-index: 999999;
+}
+
+/* Minimized state */
+.chat-box.minimized {
+  height: 40px;
+}
+
+/* Chat Header */
+.chat-header {
+  background: linear-gradient(135deg, #36d1dc, #5b86e5);
+  padding: 8px 10px;
+  color: white;
+  font-weight: bold;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: grab;
+  user-select: none;
+}
+
+.chat-header button {
+  background: transparent;
+  border: none;
+  color: white;
+  font-size: 16px;
+  margin-left: 6px;
+  cursor: pointer;
+}
+.chat-header button:hover {
+  color: #ffd4d4;
+}
+
+/* Messages area */
+.chat-messages {
+  flex: 1;
+  padding: 8px;
+  overflow-y: auto;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+/* User message style */
+.user-msg {
+  background-color: #daf8e3;
+  padding: 6px 10px;
+  margin: 5px 0;
+  border-radius: 8px;
+  align-self: flex-end;
+  max-width: 85%;
+}
+
+/* Bot message style */
+.bot-msg {
+  background-color: #f1f0f0;
+  padding: 6px 10px;
+  margin: 5px 0;
+  border-radius: 8px;
+  align-self: flex-start;
+  max-width: 85%;
+}
+
+/* Input area */
+.chat-input-container {
+  display: flex;
+  padding: 8px;
+  background-color: #fafafa;
+  border-top: 1px solid #ddd;
+}
+
+.chat-input-container input {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  outline: none;
+}
+.chat-input-container input:focus {
+  border-color: #5b86e5;
+}
+
+.chat-input-container button {
+  margin-left: 6px;
+  background: linear-gradient(135deg, #ff9966, #ff5e62);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+.chat-input-container button:hover {
+  opacity: 0.85;
+}
+
+/* Resize handle */
+.chat-resize {
+  width: 12px;
+  height: 12px;
+  background: transparent;
+  border-right: 2px solid #999;
+  border-bottom: 2px solid #999;
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  cursor: nwse-resize;
+}
+
+/* Floating open button */
+.chat-open-btn {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: linear-gradient(135deg, #ff416c, #ff4b2b);
+  color: white;
+  border: none;
+  border-radius: 20px;
+  padding: 10px 16px;
+  font-size: 16px;
+  cursor: pointer;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+  z-index: 999999;
+}
+.chat-open-btn:hover {
+  opacity: 0.85;
+}
