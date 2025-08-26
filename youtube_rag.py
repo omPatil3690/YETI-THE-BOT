@@ -9,6 +9,7 @@ from langchain_core.runnables import RunnableParallel, RunnablePassthrough, Runn
 from langchain_core.output_parsers import StrOutputParser
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
+from sentence_transformers import SentenceTransformer, util
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -45,24 +46,77 @@ def fetch_transcript(video_id: str) -> str:
 
     return transcript_text
 
+def fetch_transcript_with_chapters(video_id: str):
+    transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en'])
 
+    documents = []
+
+   
+
+     #Case 2: No chapters → semantic drift segmentation
+    model = SentenceTransformer("all-MiniLM-L6-v2")
+
+        # embed each transcript snippet
+    embeddings = model.encode([t["text"] for t in transcript], convert_to_tensor=True)
+
+    current_text, current_start = [], transcript[0]["start"]
+
+    for i in range(1, len(transcript)):
+        sim = util.cos_sim(embeddings[i-1], embeddings[i]).item()
+        current_text.append(transcript[i-1]["text"])
+
+            # if semantic drift is high OR too long → start new segment
+        if sim < 0.6 or len(" ".join(current_text)) > 1000:
+            documents.append(
+                Document(
+                    page_content=" ".join(current_text),
+                    metadata={
+                        # "video_id": video_id,
+                        "chapter": f"Segment {len(documents)+1}",
+                        "start": current_start,
+                        "end": transcript[i-1]["start"],
+                        "source": f"https://www.youtube.com/watch?v={video_id}&t={int(current_start)}s"
+                    }
+                )
+            )
+        current_text, current_start = [], transcript[i]["start"]
+
+        # add last segment
+        if current_text:
+            documents.append(
+                Document(
+                    page_content=" ".join(current_text),
+                    metadata={
+                        # "video_id": video_id,
+                        "chapter": f"Segment {len(documents)+1}",
+                        "start": current_start,
+                        "end": transcript[-1]["start"] + transcript[-1]["duration"],
+                        "source": f"https://www.youtube.com/watch?v={video_id}&t={int(current_start)}s"
+                    }
+                )
+            )
+
+    return documents
 
 def chat_with_video(video_url, question):
     # 1. Extract video ID
     video_id = extract_video_id(video_url)
 
     # 2. Fetch transcript (safe for all versions)
-    transcript_text = fetch_transcript(video_id)
-    print(f"Transcript length: {len(transcript_text)} characters")
-    if not transcript_text.strip():
-        raise ValueError("Transcript is empty.")
+    
+    # print(f"Transcript length: {len(transcript_text)} characters")
+    # if not transcript_text.strip():
+    #     raise ValueError("Transcript is empty.")
 
     # 3. Convert to documents
-    docs = [Document(page_content=transcript_text)]
+    # docs = [Document(page_content=transcript_text)]
 
     # 4. Split text
-    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-    chunked_docs = [doc for doc in splitter.split_documents(docs) if doc.page_content.strip()]
+    # splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    # chunked_docs = [doc for doc in splitter.split_documents(docs) if doc.page_content.strip()]
+
+    ## chunking based on chapters using semantic drift along with the metadata
+    chunked_docs = fetch_transcript_with_chapters(video_id)
 
     # 5. Create embeddings & vector store
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
