@@ -47,7 +47,8 @@ def fetch_transcript(video_id: str) -> str:
     return transcript_text
 
 def fetch_transcript_with_chapters(video_id: str):
-    transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en'])
+    ytt_api = YouTubeTranscriptApi()
+    transcript = ytt_api.fetch(video_id, languages=['en'])
 
     documents = []
 
@@ -57,13 +58,13 @@ def fetch_transcript_with_chapters(video_id: str):
     model = SentenceTransformer("all-MiniLM-L6-v2")
 
         # embed each transcript snippet
-    embeddings = model.encode([t["text"] for t in transcript], convert_to_tensor=True)
+    embeddings = model.encode([t.text for t in transcript], convert_to_tensor=True)
 
-    current_text, current_start = [], transcript[0]["start"]
+    current_text, current_start = [], transcript[0].start
 
     for i in range(1, len(transcript)):
         sim = util.cos_sim(embeddings[i-1], embeddings[i]).item()
-        current_text.append(transcript[i-1]["text"])
+        current_text.append(transcript[i-1].text)
 
             # if semantic drift is high OR too long → start new segment
         if sim < 0.6 or len(" ".join(current_text)) > 1000:
@@ -74,12 +75,12 @@ def fetch_transcript_with_chapters(video_id: str):
                         # "video_id": video_id,
                         "chapter": f"Segment {len(documents)+1}",
                         "start": current_start,
-                        "end": transcript[i-1]["start"],
+                        "end": transcript[i-1].start,
                         "source": f"https://www.youtube.com/watch?v={video_id}&t={int(current_start)}s"
                     }
                 )
             )
-        current_text, current_start = [], transcript[i]["start"]
+        current_text, current_start = [], transcript[i].start
 
         # add last segment
         if current_text:
@@ -90,7 +91,7 @@ def fetch_transcript_with_chapters(video_id: str):
                         # "video_id": video_id,
                         "chapter": f"Segment {len(documents)+1}",
                         "start": current_start,
-                        "end": transcript[-1]["start"] + transcript[-1]["duration"],
+                        "end": transcript[-1].start + transcript[-1].duration,
                         "source": f"https://www.youtube.com/watch?v={video_id}&t={int(current_start)}s"
                     }
                 )
@@ -126,19 +127,53 @@ def chat_with_video(video_url, question):
     retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 4})
 
     # 7. Prompt
-    prompt = PromptTemplate(
-        template="""
-        You are a helpful assistant.
-        Answer ONLY from the provided transcript context.
-        If the context is insufficient, just say you don't know.
-        And you must answer in the language of the question.
-        And if there are any casual questions like greeting or queries u must answer them in friendly tone
+    # prompt = PromptTemplate(
+    #     template="""
+    #     You are a helpful assistant.
+    #     Answer ONLY from the provided transcript context.
+    #     If the context is insufficient, just say you don't know.
+    #     And you must answer in the language of the question.
+    #     And if there are any casual questions like greeting or queries u must answer them in friendly tone
+    #     Also if the question is not related to the video, politely inform them that you can only answer questions related to the video content.
+    #     If the question mentions a specific time, use the relevant part of the transcript to answer.
+
+    #     Also if the question is requests to provide al the chapters in the video, you must provide the chapters with their timestamps and a short description of each chapter.  
+
+
+    #     Context:
         
+    #     {context}
+    #     Question: {question}
+    #     """,
+    #     input_variables=['context', 'question']
+    # )\
+    
+
+    prompt= PromptTemplate(
+        template="""
+        You are a helpful assistant specialized in answering questions about a YouTube video transcript.
+
+        Rules:
+        - Answer ONLY from the provided transcript context.
+        - If the context is insufficient, say: "I don't know from this video."
+        - Always answer in the same language as the user's question.
+        - If the user greets or asks a casual/non-video question, reply in a friendly conversational tone.
+        - If the question is unrelated to the video, politely say you can only answer questions about the video.
+        - If the user asks about a specific time (e.g., "at 2:35"), use the transcript metadata to answer with reference to that time.
+        - If the user asks for chapters, list all chapters with:
+            • Title  
+            • Start time → End time  
+            • A very short summary of that chapter
+
+         Context (from transcript):
         {context}
+
         Question: {question}
+    
         """,
         input_variables=['context', 'question']
     )
+
 
     # 8. LLM
     llm = ChatGroq(
@@ -149,7 +184,13 @@ def chat_with_video(video_url, question):
 
     # 9. RAG chain
     def format_docs(retrieved_docs):
-        return "\n\n".join(doc.page_content for doc in retrieved_docs)
+        formatted = []
+        for doc in retrieved_docs:
+            meta = doc.metadata
+            ts = f"[{int(meta['start'])}s → {int(meta.get('end', meta['start'] + 10))}s]" if "start" in meta else ""
+            chapter = f"({meta['chapter']})" if "chapter" in meta else ""
+            formatted.append(f"{ts} {chapter}\n{doc.page_content}")
+        return "\n\n".join(formatted)
 
     parallel_chain = RunnableParallel({
         'context': retriever | RunnableLambda(format_docs),
@@ -160,5 +201,5 @@ def chat_with_video(video_url, question):
     main_chain = parallel_chain | prompt | llm | parser
 
     # 10. Get answer
-    return main_chain.invoke(question)
-# chat_with_video("https://www.youtube.com/watch?v=iv-5mZ_9CPY&t=5s", "What is the main topic of the video?")
+    print(main_chain.invoke(question))
+chat_with_video("https://www.youtube.com/watch?v=iv-5mZ_9CPY&t=5s", "List all the chapters in the video with their timestamps and a short description of each chapter.")
