@@ -67,58 +67,6 @@ def fetch_transcript(video_id: str) -> str:
 
     return transcript_text
 
-# def fetch_transcript_with_chapters(video_id: str):
-#     ytt_api = YouTubeTranscriptApi()
-#     transcript = ytt_api.fetch(video_id, languages=['en'])
-
-#     documents = []
-
-   
-
-#      #Case 2: No chapters → semantic drift segmentation
-#     model = SentenceTransformer("all-MiniLM-L6-v2")
-
-#         # embed each transcript snippet
-#     embeddings = model.encode([t.text for t in transcript], convert_to_tensor=True)
-
-#     current_text, current_start = [], transcript[0].start
-
-#     for i in range(1, len(transcript)):
-#         sim = util.cos_sim(embeddings[i-1], embeddings[i]).item()
-#         current_text.append(transcript[i-1].text)
-
-#             # if semantic drift is high OR too long → start new segment
-#         if sim < 0.6 or len(" ".join(current_text)) > 1000:
-#             documents.append(
-#                 Document(
-#                     page_content=" ".join(current_text),
-#                     metadata={
-#                         # "video_id": video_id,
-#                         "chapter": f"Segment {len(documents)+1}",
-#                         "start": current_start,
-#                         "end": transcript[i-1].start,
-#                         "source": f"https://www.youtube.com/watch?v={video_id}&t={int(current_start)}s"
-#                     }
-#                 )
-#             )
-#         current_text, current_start = [], transcript[i].start
-
-#         # add last segment
-#         if current_text:
-#             documents.append(
-#                 Document(
-#                     page_content=" ".join(current_text),
-#                     metadata={
-#                         # "video_id": video_id,
-#                         "chapter": f"Segment {len(documents)+1}",
-#                         "start": current_start,
-#                         "end": transcript[-1].start + transcript[-1].duration,
-#                         "source": f"https://www.youtube.com/watch?v={video_id}&t={int(current_start)}s"
-#                     }
-#                 )
-#             )
-
-#     return documents
 
 
 def fetch_transcript_time_chunks(video_id: str, window_size: int = 45):
@@ -165,20 +113,7 @@ def chat_with_video(video_url, question):
     # 1. Extract video ID
     video_id = extract_video_id(video_url)
 
-    # 2. Fetch transcript (safe for all versions)
     
-    # print(f"Transcript length: {len(transcript_text)} characters")
-    # if not transcript_text.strip():
-    #     raise ValueError("Transcript is empty.")
-
-    # 3. Convert to documents
-    # docs = [Document(page_content=transcript_text)]
-
-    # 4. Split text
-    # splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-    # chunked_docs = [doc for doc in splitter.split_documents(docs) if doc.page_content.strip()]
-
-    ## chunking based on chapters using semantic drift along with the metadata
     chunked_docs = fetch_transcript_time_chunks(video_id)
     # print(chunked_docs[0])
     
@@ -191,28 +126,7 @@ def chat_with_video(video_url, question):
     # 6. Retriever
     retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 5})
 
-    # 7. Prompt
-    # prompt = PromptTemplate(
-    #     template="""
-    #     You are a helpful assistant.
-    #     Answer ONLY from the provided transcript context.
-    #     If the context is insufficient, just say you don't know.
-    #     And you must answer in the language of the question.
-    #     And if there are any casual questions like greeting or queries u must answer them in friendly tone
-    #     Also if the question is not related to the video, politely inform them that you can only answer questions related to the video content.
-    #     If the question mentions a specific time, use the relevant part of the transcript to answer.
-
-    #     Also if the question is requests to provide al the chapters in the video, you must provide the chapters with their timestamps and a short description of each chapter.  
-
-
-    #     Context:
-        
-    #     {context}
-    #     Question: {question}
-    #     """,
-    #     input_variables=['context', 'question']
-    # )\
-    
+   
 
     prompt= PromptTemplate(
         template="""
@@ -250,29 +164,7 @@ def chat_with_video(video_url, question):
         max_tokens=500
     )
 
-    # 9. RAG chain
-    # def format_docs(retrieved_docs):
-    #     formatted = []
-    #     for doc in retrieved_docs:
-    #         meta = doc.metadata
-    #         ts = f"[{int(meta['start'])}s → {int(meta.get('end', meta['start'] + 10))}s]" if "start" in meta else ""
-    #         chapter = f"({meta['chapter']})" if "chapter" in meta else ""
-    #         formatted.append(f"{ts} {chapter}\n{doc.page_content}")
-    #     return "\n\n".join(formatted)
-    # def format_docs(retrieved_docs):
-    #     formatted = []
-    #     for doc in retrieved_docs:
-    #         meta = doc.metadata
-    #         start = int(meta["start"])
-    #         end = int(meta.get("end", start + 10))
-    #         chapter = f" ({meta['chapter']})" if "chapter" in meta else ""
-
-    #     # Clickable YouTube link
-    #         yt_link = meta.get("source", f"https://www.youtube.com/watch?v=VIDEO_ID&t={start}s")
-    #         ts = f"[{start}s → {end}s]({yt_link})"
-
-    #         formatted.append(f"{ts}{chapter}\n{doc.page_content}")
-    #     return "\n\n".join(formatted)
+    
     def format_docs(retrieved_docs):
         def format_time(seconds: int) -> str:
             minutes = seconds // 60
