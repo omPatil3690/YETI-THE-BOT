@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Yeti Bot",
-  "version": "1.0",
-  "description": "Chat helper for YouTube videos",
+  "version": "1.1.0",
+  "description": "Chat with a YouTube video transcript, generate a summary, and jump through timestamped sections.",
   "permissions": [
     "activeTab",
     "scripting"
@@ -14,20 +14,11 @@
   "content_scripts": [
     {
       "matches": [
-        "*://*.youtube.com/*"
+        "https://www.youtube.com/*",
+        "https://m.youtube.com/*"
       ],
       "js": [
         "content.js"
-      ]
-    }
-  ],
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "static/*"
-      ],
-      "matches": [
-        "*://*.youtube.com/*"
       ]
     }
   ]

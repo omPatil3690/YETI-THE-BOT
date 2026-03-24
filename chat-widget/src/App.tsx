@@ -1,98 +1,138 @@
-import React, { useState, useRef, useEffect } from "react";
-import "./App.css"; // We'll use an external CSS file for styling
+import React, { useEffect, useRef, useState } from "react";
+import "./App.css";
 
 interface Message {
   type: "user" | "bot";
   text: string;
 }
 
+const API_BASE_URL = "http://127.0.0.1:8000";
+
 const ChatWidget: React.FC = () => {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      type: "bot",
+      text: "This sandbox talks to the same backend as the Chrome extension.",
+    },
+  ]);
   const [input, setInput] = useState("");
   const [isOpen, setIsOpen] = useState(true);
   const [isMinimized, setIsMinimized] = useState(false);
   const chatBoxRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
 
-  // Drag state
   const dragData = useRef({ offsetX: 0, offsetY: 0, isDragging: false });
+  const resizeData = useRef({
+    isResizing: false,
+    startX: 0,
+    startY: 0,
+    startWidth: 0,
+    startHeight: 0,
+  });
 
-  // Resize state
-  const resizeData = useRef({ isResizing: false, startX: 0, startY: 0, startWidth: 0, startHeight: 0 });
-
-  // --- Drag Handlers ---
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
+    const handleMouseMove = (event: MouseEvent) => {
       if (dragData.current.isDragging && chatBoxRef.current) {
-        chatBoxRef.current.style.left = e.clientX - dragData.current.offsetX + "px";
-        chatBoxRef.current.style.top = e.clientY - dragData.current.offsetY + "px";
+        chatBoxRef.current.style.left =
+          event.clientX - dragData.current.offsetX + "px";
+        chatBoxRef.current.style.top =
+          event.clientY - dragData.current.offsetY + "px";
       }
+
       if (resizeData.current.isResizing && chatBoxRef.current) {
-        chatBoxRef.current.style.width = Math.max(250, resizeData.current.startWidth + (e.clientX - resizeData.current.startX)) + "px";
-        chatBoxRef.current.style.height = Math.max(300, resizeData.current.startHeight + (e.clientY - resizeData.current.startY)) + "px";
+        chatBoxRef.current.style.width =
+          Math.max(
+            250,
+            resizeData.current.startWidth +
+              (event.clientX - resizeData.current.startX)
+          ) + "px";
+        chatBoxRef.current.style.height =
+          Math.max(
+            300,
+            resizeData.current.startHeight +
+              (event.clientY - resizeData.current.startY)
+          ) + "px";
       }
     };
 
     const handleMouseUp = () => {
       dragData.current.isDragging = false;
       resizeData.current.isResizing = false;
-      if (headerRef.current) headerRef.current.style.cursor = "grab";
+      if (headerRef.current) {
+        headerRef.current.style.cursor = "grab";
+      }
     };
 
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
+
     return () => {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
   }, []);
 
-  const startDrag = (e: React.MouseEvent) => {
-    if (chatBoxRef.current) {
-      dragData.current.isDragging = true;
-      dragData.current.offsetX = e.clientX - chatBoxRef.current.offsetLeft;
-      dragData.current.offsetY = e.clientY - chatBoxRef.current.offsetTop;
-      if (headerRef.current) headerRef.current.style.cursor = "grabbing";
+  const startDrag = (event: React.MouseEvent) => {
+    if (!chatBoxRef.current) {
+      return;
+    }
+
+    dragData.current.isDragging = true;
+    dragData.current.offsetX = event.clientX - chatBoxRef.current.offsetLeft;
+    dragData.current.offsetY = event.clientY - chatBoxRef.current.offsetTop;
+    if (headerRef.current) {
+      headerRef.current.style.cursor = "grabbing";
     }
   };
 
-  const startResize = (e: React.MouseEvent) => {
-    if (chatBoxRef.current) {
-      resizeData.current.isResizing = true;
-      resizeData.current.startX = e.clientX;
-      resizeData.current.startY = e.clientY;
-      resizeData.current.startWidth = chatBoxRef.current.offsetWidth;
-      resizeData.current.startHeight = chatBoxRef.current.offsetHeight;
-      e.preventDefault();
+  const startResize = (event: React.MouseEvent) => {
+    if (!chatBoxRef.current) {
+      return;
     }
+
+    resizeData.current.isResizing = true;
+    resizeData.current.startX = event.clientX;
+    resizeData.current.startY = event.clientY;
+    resizeData.current.startWidth = chatBoxRef.current.offsetWidth;
+    resizeData.current.startHeight = chatBoxRef.current.offsetHeight;
+    event.preventDefault();
   };
 
-  // --- Message Send ---
   const sendMessage = async () => {
     const question = input.trim();
-    if (!question) return;
+    if (!question) {
+      return;
+    }
 
-    setMessages((prev) => [...prev, { type: "user", text: question }]);
+    setMessages((prev) => [
+      ...prev,
+      { type: "user", text: question },
+      { type: "bot", text: "Thinking..." },
+    ]);
     setInput("");
-    setMessages((prev) => [...prev, { type: "bot", text: "Thinking..." }]);
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/process", {
+      const response = await fetch(API_BASE_URL + "/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ video_url: window.location.href, question })
+        body: JSON.stringify({
+          video_url: window.location.href,
+          question,
+        }),
       });
-      const data = await res.json();
+      const data = await response.json();
       setMessages((prev) => {
-        const newMessages = [...prev];
-        newMessages[newMessages.length - 1].text = data.answer || "No answer returned.";
-        return newMessages;
+        const nextMessages = [...prev];
+        nextMessages[nextMessages.length - 1].text =
+          data.answer || "No answer returned.";
+        return nextMessages;
       });
-    } catch (err) {
+    } catch (error) {
       setMessages((prev) => {
-        const newMessages = [...prev];
-        newMessages[newMessages.length - 1].text = "Error: Could not connect to backend.";
-        return newMessages;
+        const nextMessages = [...prev];
+        nextMessages[nextMessages.length - 1].text =
+          "Error: Could not connect to backend.";
+        return nextMessages;
       });
     }
   };
@@ -100,20 +140,30 @@ const ChatWidget: React.FC = () => {
   return (
     <>
       {isOpen && (
-        <div ref={chatBoxRef} className={`chat-box ${isMinimized ? "minimized" : ""}`}>
-          <div ref={headerRef} className="chat-header" onMouseDown={startDrag}>
-            <span>YouTube Helper</span>
+        <div
+          ref={chatBoxRef}
+          className={`chat-box ${isMinimized ? "minimized" : ""}`}
+        >
+          <div
+            ref={headerRef}
+            className="chat-header"
+            onMouseDown={startDrag}
+          >
+            <span>YouTube Video Bot</span>
             <div>
               <button onClick={() => setIsMinimized(!isMinimized)}>_</button>
-              <button onClick={() => setIsOpen(false)}>×</button>
+              <button onClick={() => setIsOpen(false)}>X</button>
             </div>
           </div>
           {!isMinimized && (
             <>
               <div className="chat-messages">
-                {messages.map((m, i) => (
-                  <div key={i} className={m.type === "user" ? "user-msg" : "bot-msg"}>
-                    {m.text}
+                {messages.map((message, index) => (
+                  <div
+                    key={index}
+                    className={message.type === "user" ? "user-msg" : "bot-msg"}
+                  >
+                    {message.text}
                   </div>
                 ))}
               </div>
@@ -121,8 +171,10 @@ const ChatWidget: React.FC = () => {
                 <input
                   type="text"
                   value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+                  onChange={(event) => setInput(event.target.value)}
+                  onKeyDown={(event) =>
+                    event.key === "Enter" && sendMessage()
+                  }
                   placeholder="Ask about this video..."
                 />
                 <button onClick={sendMessage}>Send</button>
@@ -133,7 +185,9 @@ const ChatWidget: React.FC = () => {
         </div>
       )}
       {!isOpen && (
-        <button className="chat-open-btn" onClick={() => setIsOpen(true)}>💬</button>
+        <button className="chat-open-btn" onClick={() => setIsOpen(true)}>
+          Chat
+        </button>
       )}
     </>
   );
