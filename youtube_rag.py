@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 from dataclasses import dataclass
 from functools import lru_cache
@@ -9,7 +8,6 @@ from math import ceil
 from typing import Any, Sequence
 from urllib.parse import parse_qs, urlparse
 
-from dotenv import load_dotenv
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 from langchain_core.prompts import PromptTemplate
@@ -17,14 +15,13 @@ from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
 from youtube_transcript_api import NoTranscriptFound, TranscriptsDisabled, YouTubeTranscriptApi
 
-load_dotenv(override=True)
-
 DEFAULT_CHUNK_WINDOW_SECONDS = 90
 MAX_CHAT_CONTEXT_CHUNKS = 5
 MIN_SECTION_COUNT = 4
 MAX_SECTION_COUNT = 8
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 CHAT_MODEL_NAME = "llama-3.3-70b-versatile"
+SECTION_CACHE: dict[str, tuple["VideoSection", ...]] = {}
 
 CHAT_PROMPT = PromptTemplate.from_template(
     """You are a helpful assistant answering questions about a YouTube video.
@@ -222,15 +219,16 @@ def _get_embeddings() -> HuggingFaceEmbeddings:
     return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
 
 
-@lru_cache(maxsize=1)
-def _get_llm() -> ChatGroq:
-    if not os.getenv("GROQ_API_KEY"):
-        raise RuntimeError("Missing GROQ_API_KEY. Add it to your .env file before starting the backend.")
+def _build_llm(api_key: str) -> ChatGroq:
+    cleaned_key = api_key.strip()
+    if not cleaned_key:
+        raise ValueError("A Groq API key is required before the assistant can answer.")
 
     return ChatGroq(
         model=CHAT_MODEL_NAME,
         temperature=0.2,
         max_tokens=900,
+        api_key=cleaned_key,
     )
 
 
@@ -349,7 +347,7 @@ def _format_chat_context(docs: Sequence[Document]) -> str:
     return "\n\n".join(blocks)
 
 
-def chat_with_video(video_url: str, question: str) -> str:
+def chat_with_video(video_url: str, question: str, api_key: str) -> str:
     if not question or not question.strip():
         raise ValueError("Please provide a question for the video.")
 
@@ -360,7 +358,7 @@ def chat_with_video(video_url: str, question: str) -> str:
         context=_format_chat_context(context_docs),
         question=question.strip(),
     )
-    response = _get_llm().invoke(prompt)
+    response = _build_llm(api_key).invoke(prompt)
     return _response_text(response)
 
 
@@ -450,28 +448,38 @@ def _parse_sections_payload(video_id: str, chunks: Sequence[Document], raw_paylo
     return tuple(sections)
 
 
-def _generate_sections_with_llm(video_id: str, chunks: Sequence[Document]) -> tuple[VideoSection, ...]:
+def _generate_sections_with_llm(
+    video_id: str,
+    chunks: Sequence[Document],
+    api_key: str,
+) -> tuple[VideoSection, ...]:
     prompt = SECTION_PROMPT.format(
         min_sections=min(MIN_SECTION_COUNT, len(chunks)),
         max_sections=min(MAX_SECTION_COUNT, len(chunks)),
         outline=_build_section_outline(chunks),
     )
-    response = _get_llm().invoke(prompt)
+    response = _build_llm(api_key).invoke(prompt)
     return _parse_sections_payload(video_id, chunks, _response_text(response))
 
 
-@lru_cache(maxsize=12)
-def _get_video_sections(video_id: str) -> tuple[VideoSection, ...]:
+def _get_video_sections(video_id: str, api_key: str) -> tuple[VideoSection, ...]:
+    cached_sections = SECTION_CACHE.get(video_id)
+    if cached_sections:
+        return cached_sections
+
     knowledge_base = _load_video_knowledge_base(video_id)
     try:
-        return _generate_sections_with_llm(video_id, knowledge_base.chunks)
+        sections = _generate_sections_with_llm(video_id, knowledge_base.chunks, api_key)
     except Exception:
-        return _fallback_sections(video_id, knowledge_base.chunks)
+        sections = _fallback_sections(video_id, knowledge_base.chunks)
+
+    SECTION_CACHE[video_id] = sections
+    return sections
 
 
-def get_video_sections(video_url: str) -> list[dict[str, Any]]:
+def get_video_sections(video_url: str, api_key: str) -> list[dict[str, Any]]:
     video_id = extract_video_id(video_url)
-    sections = _get_video_sections(video_id)
+    sections = _get_video_sections(video_id, api_key)
     return [
         {
             "title": section.title,
@@ -486,8 +494,8 @@ def get_video_sections(video_url: str) -> list[dict[str, Any]]:
     ]
 
 
-def summarize_video(video_url: str) -> str:
-    sections = get_video_sections(video_url)
+def summarize_video(video_url: str, api_key: str) -> str:
+    sections = get_video_sections(video_url, api_key)
     if not sections:
         raise ValueError("No sections could be generated for this video.")
 
